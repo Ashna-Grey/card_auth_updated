@@ -64,8 +64,8 @@ def analyze():
     file = request.files['file']
     try:
         df = pd.read_csv(file)
-    except Exception:
-        return jsonify({"error": "Invalid CSV"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
     result = analyze_transactions(df)
     total_cards = df["card_number"].nunique()
     return jsonify({
