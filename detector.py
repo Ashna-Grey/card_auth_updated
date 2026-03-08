@@ -2,8 +2,10 @@ import pandas as pd
 import networkx as nx
 import requests
 from sklearn.ensemble import IsolationForest
+from cachetools import TTLCache
 TRANSACTION_THRESHOLD = 3
 TIME_WINDOW_MINUTES = 10
+geo_cache = TTLCache(maxsize=10000, ttl=3600)
 COLUMN_ALIASES = {
     "card_number":[
         "card_number","card","card_no","credit_card","cc","cardnum"
@@ -24,10 +26,13 @@ def normalize_columns(df):
     df = df.rename(columns=mapping)
     return df
 def get_country(ip):
+    if ip in geo_cache:
+        return geo_cache[ip]
     try:
         r = requests.get(f"http://ip-api.com/json/{ip}", timeout=2)
-        data = r.json()
-        return data.get("country","Unknown")
+        country = r.json().get("country","Unknown")
+        geo_cache[ip] = country
+        return country
     except:
         return "Unknown"
 def build_fraud_graph(df):
@@ -83,14 +88,10 @@ def analyze_transactions(df):
     ]
     missing = [c for c in required_columns if c not in df.columns]
     if missing:
-        return {
-            "error": f"Missing required columns: {missing}",
-            "available_columns": list(df.columns)
-        }
+        return {"error": f"Missing columns: {missing}"}
     df["transaction_time"] = pd.to_datetime(df["transaction_time"])
     grouped = df.groupby("card_number")
     ip_usage = df.groupby("ip_address")["card_number"].nunique()
-    avg_transactions = df.groupby("card_number").size().mean()
     anomaly_cards = run_anomaly_detection(df)
     graph = build_fraud_graph(df)
     suspicious = []
@@ -108,7 +109,7 @@ def analyze_transactions(df):
         behavioral_anomaly = False
         geo_anomaly = False
         fraud_patterns = []
-        if transactions >= TRANSACTION_THRESHOLD and time_span <= TIME_WINDOW_MINUTES and unique_ips > 1:
+        if transactions >= TRANSACTION_THRESHOLD and unique_ips > 1 and time_span <= TIME_WINDOW_MINUTES:
             velocity_flag = True
             fraud_patterns.append("Velocity Fraud")
         for ip in group["ip_address"]:
@@ -139,21 +140,19 @@ def analyze_transactions(df):
         risk_score, risk_level = calculate_risk(signals)
         if risk_level in ["MEDIUM","HIGH","CRITICAL"]:
             suspicious.append({
-                "card_number": card,
-                "transactions": int(transactions),
-                "unique_ips": int(unique_ips),
-                "time_span_minutes": round(time_span,2),
-                "risk_score": int(risk_score),
-                "risk_level": risk_level,
-                "fraud_patterns": list(set(fraud_patterns))
+                "card_number":card,
+                "transactions":transactions,
+                "unique_ips":unique_ips,
+                "risk_score":risk_score,
+                "risk_level":risk_level,
+                "fraud_patterns":list(set(fraud_patterns))
             })
-    graph_nodes = [{"id":n, "type":graph.nodes[n]["type"]} for n in graph.nodes]
+    graph_nodes = [{"id":n,"type":graph.nodes[n]["type"]} for n in graph.nodes]
     graph_edges = [{"source":u,"target":v} for u,v in graph.edges]
     return {
-        "suspicious_cards": suspicious,
+        "suspicious_cards":suspicious,
         "fraud_network":{
             "nodes":graph_nodes,
             "edges":graph_edges
         }
-
     }
