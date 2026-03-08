@@ -24,6 +24,34 @@ def dashboard():
         "datasets_processed": system_metrics["datasets_processed"],
         "transactions_processed": system_metrics["transactions_processed"]
     })
+@app.route("/detect_schema", methods=["POST"])
+def detect_schema():
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+    file = request.files["file"]
+    try:
+        df = pd.read_csv(file)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    schema = {col: str(dtype) for col, dtype in df.dtypes.items()}
+    return jsonify({"columns": schema, "row_count": len(df)})
+@app.route("/dataset_info", methods=["POST"])
+def dataset_info():
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+    file = request.files["file"]
+    try:
+        df = pd.read_csv(file)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    info = {
+        "row_count": len(df),
+        "column_count": len(df.columns),
+        "columns": list(df.columns),
+        "missing_values": df.isnull().sum().to_dict(),
+        "dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()}
+    }
+    return jsonify(info)
 @app.route("/analyze", methods=["POST"])
 def analyze():
     if "file" not in request.files:
