@@ -1,4 +1,7 @@
 flask
 pandas
-gunicorn
 flask-cors
+gunicorn
+networkx
+scikit-learn
+requests
