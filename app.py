@@ -1,9 +1,10 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import pandas as pd
-from detector import analyze_transactions
+from detector import analyze_transactions, normalize_columns
 app = Flask(__name__)
 CORS(app)
+MAX_ROWS = 500000
 @app.route("/")
 def home():
     return jsonify({
@@ -11,73 +12,78 @@ def home():
     })
 @app.route("/health")
 def health():
-    return jsonify({
-        "status": "ok"
-    })
+    return jsonify({"status": "ok"})
 @app.route("/docs")
 def docs():
-    api_docs = {
+    return jsonify({
         "endpoint": "/analyze",
         "method": "POST",
-        "input_format": {
-            "file": "CSV upload",
-            "required_columns": [
-                "card_number",
-                "transaction_time",
-                "ip_address"
-            ]
-        },
-        "description": "Detects suspicious card usage based on IP variation and transaction frequency."
-    }
-    return jsonify(api_docs)
-@app.route("/summary")
-def summary():
-    data = {
-        "system": "Card Fraud Detection",
-        "detection_method": [
-            "Transaction frequency threshold",
-            "Multiple IP detection",
-            "Short time window anomaly"
+        "supported_formats": ["csv", "xlsx", "json"],
+        "required_fields": [
+            "card_number",
+            "transaction_time",
+            "ip_address"
         ]
+    })
+@app.route("/detect_schema", methods=["POST"])
+def detect_schema():
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+    file = request.files["file"]
+    df = pd.read_csv(file)
+    detected = {}
+    for col in df.columns:
+        name = col.lower()
+        if "card" in name:
+            detected["card_number"] = col
+        if "ip" in name:
+            detected["ip_address"] = col
+        if "time" in name or "date" in name:
+            detected["transaction_time"] = col
+    return jsonify({
+        "detected_schema": detected,
+        "columns": list(df.columns)
+    })
+@app.route("/dataset_info", methods=["POST"])
+def dataset_info():
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+    file = request.files["file"]
+    df = pd.read_csv(file)
+    info = {
+        "rows": len(df),
+        "columns": list(df.columns)
     }
-    return jsonify(data)
-@app.route("/test")
-def test():
-    sample_data = {
-        "suspicious_cards": [
-            {
-                "card_number": "11112222",
-                "transactions": 3,
-                "unique_ips": 2,
-                "time_span_minutes": 4,
-                "risk_score": 16,
-                "risk_level": "MEDIUM",
-                "reason": "Multiple IP addresses used within short time window"
-            }
-        ]
-    }
-    return jsonify(sample_data)
+    return jsonify(info)
 @app.route("/analyze", methods=["POST"])
 def analyze():
-    if 'file' not in request.files:
+    if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
-        filename = file.filename.lower()
-        try:
-            if filename.endswith(".csv"):
-                df = pd.read_csv(file)
-            elif filename.endswith(".xlsx") or filename.endswith(".xls"):
-                df = pd.read_excel(file)
-            elif filename.endswith(".json"):
-                df = pd.read_json(file)
-            else:
-                return jsonify({"error": "Unsupported file format"}), 400
-        except Exception as e:
-            return jsonify({"error": str(e)}), 400
+    file = request.files["file"]
+    filename = file.filename.lower()
+    try:
+        if filename.endswith(".csv"):
+            df = pd.read_csv(file)
+        elif filename.endswith(".xlsx") or filename.endswith(".xls"):
+            df = pd.read_excel(file)
+        elif filename.endswith(".json"):
+            df = pd.read_json(file)
+        else:
+            return jsonify({"error": "Unsupported file format"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    df = normalize_columns(df)
+    rows_original = len(df)
+    if len(df) > MAX_ROWS:
+        df = df.sample(MAX_ROWS)
     result = analyze_transactions(df)
-    total_cards = df["card_number"].nunique()
     return jsonify({
-        "total_cards_analyzed": int(total_cards),
+        "rows_original": rows_original,
+        "rows_processed": len(df),
+        "total_cards_analyzed": int(df["card_number"].nunique()),
         "suspicious_cards": result
     })
+
+
 if __name__ == "__main__":
     app.run(debug=True)
