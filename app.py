@@ -61,11 +61,18 @@ def test():
 def analyze():
     if 'file' not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
-    file = request.files['file']
-    try:
-        df = pd.read_csv(file)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+        filename = file.filename.lower()
+        try:
+            if filename.endswith(".csv"):
+                df = pd.read_csv(file)
+            elif filename.endswith(".xlsx") or filename.endswith(".xls"):
+                df = pd.read_excel(file)
+            elif filename.endswith(".json"):
+                df = pd.read_json(file)
+            else:
+                return jsonify({"error": "Unsupported file format"}), 400
+        except Exception as e:
+            return jsonify({"error": str(e)}), 400
     result = analyze_transactions(df)
     total_cards = df["card_number"].nunique()
     return jsonify({
