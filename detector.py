@@ -45,7 +45,6 @@ def calculate_risk(transactions, unique_ips):
     return score, level
 def analyze_transactions(df):
     suspicious = []
-    df = normalize_columns(df)
     required_columns = [
         "card_number",
         "transaction_time",
@@ -80,6 +79,7 @@ def analyze_transactions(df):
                     "time_span_minutes": round(time_span, 2),
                     "risk_score": int(risk_score),
                     "risk_level": risk_level,
-                    "reason": "Multiple IP addresses used within short time window"
+                    "reason":
+                    "Multiple IP addresses used within short time window"
                 })
     return suspicious
