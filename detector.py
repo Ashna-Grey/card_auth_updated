@@ -44,6 +44,23 @@ def build_fraud_graph(df):
         G.add_node(ip, type="ip")
         G.add_edge(card, ip)
     return G
+def graph_to_json(G):
+    nodes = []
+    edges = []
+    for n,data in G.nodes(data=True):
+        nodes.append({
+            "id":n,
+            "type":data.get("type","unknown")
+        })
+    for u,v in G.edges():
+        edges.append({
+            "source":u,
+            "target":v
+        })
+    return {
+        "nodes":nodes,
+        "edges":edges
+    }
 def run_anomaly_detection(df):
     features = df.groupby("card_number").agg({
         "ip_address":"nunique",
@@ -88,12 +105,11 @@ def analyze_transactions(df):
     ]
     missing = [c for c in required_columns if c not in df.columns]
     if missing:
-        return {"error": f"Missing columns: {missing}"}
+        return {"error":f"Missing columns {missing}"}
     df["transaction_time"] = pd.to_datetime(df["transaction_time"])
     grouped = df.groupby("card_number")
     ip_usage = df.groupby("ip_address")["card_number"].nunique()
     anomaly_cards = run_anomaly_detection(df)
-    graph = build_fraud_graph(df)
     suspicious = []
     for card, group in grouped:
         group = group.sort_values("transaction_time")
@@ -102,7 +118,7 @@ def analyze_transactions(df):
         time_span = (
             group["transaction_time"].max()
             - group["transaction_time"].min()
-        ).total_seconds() / 60
+        ).total_seconds()/60
         velocity_flag = False
         ip_reputation_flag = False
         network_flag = False
@@ -147,12 +163,4 @@ def analyze_transactions(df):
                 "risk_level":risk_level,
                 "fraud_patterns":list(set(fraud_patterns))
             })
-    graph_nodes = [{"id":n,"type":graph.nodes[n]["type"]} for n in graph.nodes]
-    graph_edges = [{"source":u,"target":v} for u,v in graph.edges]
-    return {
-        "suspicious_cards":suspicious,
-        "fraud_network":{
-            "nodes":graph_nodes,
-            "edges":graph_edges
-        }
-    }
+    return suspicious
